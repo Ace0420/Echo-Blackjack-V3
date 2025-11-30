@@ -33,7 +33,8 @@
       try{
         speechSynthesis.cancel();
         const u=new SpeechSynthesisUtterance(text);
-        u.rate=0.95; u.lang='en-US';
+        u.rate=0.85; // slower, more natural pacing
+        u.lang='en-US';
         if(cb){ u.onend=cb; u.onerror=cb; }
         speechSynthesis.speak(u);
       }catch{ if(cb) setTimeout(cb,300); }
@@ -53,11 +54,21 @@
 
     function newRound(){ roundActive=false; playerHands=[]; dealerHand=[]; insuranceBet=0; speak(`Bankroll ${bankroll}. Say bet amount then deal.`); }
     function placeBet(amount){ if(amount>bankroll){speak(`Not enough bankroll.`);return;} playerHands=[{cards:[],bet:amount,doubled:false,surrendered:false,settled:false}]; bankroll-=amount; speak(`Bet ${amount}. Say deal.`); }
+
     function deal(){
       if(playerHands.length===0){speak(`No bet placed.`);return;}
       buildDeck(); dealerHand=[drawCard(),drawCard()]; playerHands[0].cards=[drawCard(),drawCard()]; roundActive=true;
-      speak(`You have ${cardName(playerHands[0].cards[0])} and ${cardName(playerHands[0].cards[1])}, total ${handValue(playerHands[0].cards)}. Dealer shows ${cardName(dealerHand[0])}.`);
+
+      // Natural narration with pacing
+      speak(`Dealing cards...`, ()=>{
+        speak(`Your first card is ${cardName(playerHands[0].cards[0])}`, ()=>{
+          speak(`Your second card is ${cardName(playerHands[0].cards[1])}, total ${handValue(playerHands[0].cards)}.`, ()=>{
+            speak(`Dealer shows ${cardName(dealerHand[0])}.`);
+          });
+        });
+      });
     }
+
     function hit(){
       if(!roundActive)return; const hand=playerHands[0]; hand.cards.push(drawCard()); let total=handValue(hand.cards);
       speak(`You draw ${cardName(hand.cards[hand.cards.length-1])}. Total ${total}.`);
@@ -78,8 +89,7 @@
       if(hand.cards.length!==2||hand.doubled)return speak('You can only double on first two cards.');
       if(hand.bet>bankroll)return speak('Not enough bankroll to double.');
       bankroll-=hand.bet; hand.bet*=2; hand.doubled=true; hand.cards.push(drawCard());
-      speak(`Double down. Bet ${hand.bet}. You draw ${cardName(hand.cards[2])}, total ${handValue(hand.cards)}. Standing.`);
-      stand();
+      speak(`Double down. Bet ${hand.bet}. You draw ${cardName(hand.cards[2])}, total ${handValue(hand.cards)}. Standing.`, ()=>stand());
     }
     function split(){
       const hand=playerHands[0];
@@ -111,7 +121,8 @@
       recognition.onstart=()=>micButton.classList.add('listening');
       recognition.onend=()=>micButton.classList.remove('listening');
       recognition.onresult=(e)=>{ const cmd=e.results[e.results.length-1][0].transcript.toLowerCase().trim(); route(cmd); };
-      recognition.start(); speak('Listening.');
+      recognition.start();
+      // Removed distracting spoken "Listening."
     }
     function stopListening(){ if(recognition){recognition.stop(); recognition=null;} micButton.classList.remove('listening'); speak('Stopped listening.'); }
 
@@ -137,5 +148,5 @@
     micButton.addEventListener('click',handleTap);
   </script>
 </body>
-
 </html>
+
