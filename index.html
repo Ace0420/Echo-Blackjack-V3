@@ -52,39 +52,44 @@
     function isBlackjack(hand){ return hand.length===2 && handValue(hand)===21; }
     function canSplit(hand){ return hand.length===2 && valueCard(hand[0].value)===valueCard(hand[1].value); }
 
-    function newRound(){ roundActive=false; playerHands=[]; dealerHand=[]; insuranceBet=0; speak(`Bankroll ${bankroll}. Say bet amount then deal.`); }
-    function placeBet(amount){ if(amount>bankroll){speak(`Not enough bankroll.`);return;} playerHands=[{cards:[],bet:amount,doubled:false,surrendered:false,settled:false}]; bankroll-=amount; speak(`Bet ${amount}. Say deal.`); }
+    function newRound(){ roundActive=false; playerHands=[]; dealerHand=[]; insuranceBet=0; speak(`Bankroll ${bankroll}. Tap the screen, then say bet and an amount. Then tap and say deal.`); }
+    function placeBet(amount){ if(roundActive){speak('Finish this hand first. Say hit or stand.');return;} if(!amount||amount<1){speak(`Say bet and an amount, like bet fifty. Bankroll ${bankroll}.`);return;} if(playerHands.length>0){bankroll+=playerHands[0].bet;playerHands=[];} if(amount>bankroll){speak(`Not enough bankroll. You have ${bankroll}.`);return;} playerHands=[{cards:[],bet:amount,doubled:false,surrendered:false,settled:false}]; bankroll-=amount; speak(`Bet ${amount}. Say deal.`); }
 
     function deal(){
-      if(playerHands.length===0){speak(`No bet placed.`);return;}
+      if(roundActive){speak('The cards are already dealt. Say hit or stand.');return;}
+      if(playerHands.length===0){speak(`No bet placed. Say bet and an amount first.`);return;}
       buildDeck(); dealerHand=[drawCard(),drawCard()]; playerHands[0].cards=[drawCard(),drawCard()]; roundActive=true;
 
-      // Natural narration with pacing
-      speak(`Dealing cards...`, ()=>{
-        speak(`Your first card is ${cardName(playerHands[0].cards[0])}`, ()=>{
-          speak(`Your second card is ${cardName(playerHands[0].cards[1])}, total ${handValue(playerHands[0].cards)}.`, ()=>{
-            speak(`Dealer shows ${cardName(dealerHand[0])}.`);
-          });
-        });
-      });
+      // Said as one line. Spoken in separate pieces, a tap on the screen
+      // made the next piece start talking while the microphone was open.
+      const mine=playerHands[0].cards;
+      speak(`Dealing. Your cards are ${cardName(mine[0])} and ${cardName(mine[1])}, total ${handValue(mine)}. Dealer shows ${cardName(dealerHand[0])}. Say hit or stand.`);
     }
 
+    // Each new line of speech cuts off the one before it, so everything
+    // that happens in one move is said in a single line.
+    const NO_HAND='No hand in play. Say bet and an amount, then deal.';
+    const NEXT_HAND=' Say bet and an amount for the next hand.';
     function hit(){
-      if(!roundActive)return; const hand=playerHands[0]; hand.cards.push(drawCard()); let total=handValue(hand.cards);
-      speak(`You draw ${cardName(hand.cards[hand.cards.length-1])}. Total ${total}.`);
-      if(total>21){ speak(`Bust. Dealer wins.`); roundActive=false; }
+      if(!roundActive)return speak(NO_HAND);
+      const hand=playerHands[0]; hand.cards.push(drawCard()); let total=handValue(hand.cards);
+      let line=`You draw ${cardName(hand.cards[hand.cards.length-1])}. Total ${total}.`;
+      if(total>21){ line+=` Bust. Dealer wins. Bankroll ${bankroll}.`+NEXT_HAND; roundActive=false; playerHands=[]; }
+      speak(line);
     }
     function stand(){
-      if(!roundActive)return;
+      if(!roundActive)return speak(NO_HAND);
       while(handValue(dealerHand)<17) dealerHand.push(drawCard());
       let p=handValue(playerHands[0].cards),d=handValue(dealerHand);
-      speak(`Dealer has ${dealerHand.map(cardName).join(', ')} for ${d}. You have ${p}.`);
-      if(d>21||p>d){ bankroll+=playerHands[0].bet*2; speak(`You win. Bankroll ${bankroll}.`); }
-      else if(p<d){ speak(`Dealer wins.`); }
-      else { bankroll+=playerHands[0].bet; speak(`Push. Bankroll ${bankroll}.`); }
-      roundActive=false;
+      let line=`Dealer has ${dealerHand.map(cardName).join(', ')} for ${d}. You have ${p}.`;
+      if(d>21||p>d){ bankroll+=playerHands[0].bet*2; line+=` You win. Bankroll ${bankroll}.`; }
+      else if(p<d){ line+=` Dealer wins. Bankroll ${bankroll}.`; }
+      else { bankroll+=playerHands[0].bet; line+=` Push. Bankroll ${bankroll}.`; }
+      roundActive=false; playerHands=[];
+      speak(line+NEXT_HAND);
     }
     function doubleDown(){
+      if(!roundActive)return speak(NO_HAND);
       const hand=playerHands[0];
       if(hand.cards.length!==2||hand.doubled)return speak('You can only double on first two cards.');
       if(hand.bet>bankroll)return speak('Not enough bankroll to double.');
@@ -92,6 +97,7 @@
       speak(`Double down. Bet ${hand.bet}. You draw ${cardName(hand.cards[2])}, total ${handValue(hand.cards)}. Standing.`, ()=>stand());
     }
     function split(){
+      if(!roundActive)return speak(NO_HAND);
       const hand=playerHands[0];
       if(!canSplit(hand.cards))return speak('You can only split pairs.');
       if(hand.bet>bankroll)return speak('Not enough bankroll to split.');
@@ -102,34 +108,74 @@
       speak(`Split. First hand ${hand.cards.map(cardName).join(', ')} total ${handValue(hand.cards)}. Second hand ${newHand.cards.map(cardName).join(', ')} total ${handValue(newHand.cards)}.`);
     }
     function surrender(){
+      if(!roundActive)return speak(NO_HAND);
       const hand=playerHands[0];
       if(hand.cards.length!==2||hand.surrendered)return speak('You can only surrender on first two cards.');
-      hand.surrendered=true; bankroll+=Math.floor(hand.bet/2); speak(`Surrender. Half bet returned. Bankroll ${bankroll}.`); roundActive=false;
+      hand.surrendered=true; bankroll+=Math.floor(hand.bet/2); speak(`Surrender. Half bet returned. Bankroll ${bankroll}.`+NEXT_HAND); roundActive=false; playerHands=[];
     }
     function insurance(choice){
+      if(!roundActive)return speak(NO_HAND);
       if(dealerHand[0].value!=='A')return speak('Insurance not available.');
       if(choice){ insuranceBet=Math.floor(playerHands[0].bet/2); bankroll-=insuranceBet; speak(`Insurance taken ${insuranceBet}.`); }
       else speak('No insurance.');
     }
 
-    // Voice recognition
-    let recognition=null;
+    // Voice recognition: TAP TO TALK.
+    // One tap opens the microphone for one command, then it closes again.
+    // (It used to stay open, heard the game's own voice, and answered
+    // itself with "Unknown command" over and over.)
+    // A short chirp so the player knows when the microphone opens and closes.
+    // 'start' rises, 'stop' falls. Made in the browser, no sound file needed.
+    let chirpContext = null;
+    function chirp(kind) {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+            if (!chirpContext) chirpContext = new AudioContextClass();
+            if (chirpContext.state === 'suspended') chirpContext.resume();
+            const now = chirpContext.currentTime;
+            const tone = chirpContext.createOscillator();
+            const volume = chirpContext.createGain();
+            tone.type = 'sine';
+            tone.frequency.setValueAtTime(kind === 'start' ? 660 : 880, now);
+            tone.frequency.exponentialRampToValueAtTime(kind === 'start' ? 990 : 520, now + 0.12);
+            volume.gain.setValueAtTime(0.0001, now);
+            volume.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+            volume.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+            tone.connect(volume);
+            volume.connect(chirpContext.destination);
+            tone.start(now);
+            tone.stop(now + 0.16);
+        } catch (e) {
+            // A missing chirp must never stop the game.
+        }
+    }
+
+    let recognition=null, listening=false;
     function startListening(){
       const Rec=window.webkitSpeechRecognition||window.SpeechRecognition;
-      if(!Rec){speak('Voice not supported.');return;}
-      recognition=new Rec(); recognition.continuous=true; recognition.lang='en-US';
-      recognition.onstart=()=>micButton.classList.add('listening');
-      recognition.onend=()=>micButton.classList.remove('listening');
-      recognition.onresult=(e)=>{ const cmd=e.results[e.results.length-1][0].transcript.toLowerCase().trim(); route(cmd); };
-      recognition.start();
-      // Removed distracting spoken "Listening."
+      if(!Rec){speak('Voice is not supported in this browser. Please use Chrome.');return;}
+      try{ speechSynthesis.cancel(); }catch(e){}
+      try{
+        recognition=new Rec(); recognition.continuous=false; recognition.interimResults=false; recognition.lang='en-US';
+        recognition.onstart=()=>{ listening=true; micButton.classList.add('listening'); };
+        recognition.onresult=(e)=>{ const cmd=e.results[0][0].transcript.toLowerCase().trim(); stopListening(); setTimeout(()=>route(cmd),400); };
+        recognition.onerror=(e)=>{ stopListening(); if(e.error==='not-allowed'||e.error==='service-not-allowed') speak('The microphone is blocked. Please allow the microphone for this page.'); else if(e.error==='no-speech') speak('I did not hear anything. Tap and try again.'); };
+        recognition.onend=()=>stopListening();
+        chirp('start');
+        recognition.start();
+      }catch(e){ listening=false; micButton.classList.remove('listening'); speak('Could not start listening. Tap to try again.'); }
     }
-    function stopListening(){ if(recognition){recognition.stop(); recognition=null;} micButton.classList.remove('listening'); speak('Stopped listening.'); }
+    function stopListening(){
+      if(listening) chirp('stop');
+      listening=false; micButton.classList.remove('listening');
+      if(recognition){ try{recognition.stop();}catch(e){} recognition=null; }
+    }
 
     function route(cmd){
       const amt=cmd.match(/(\d+)/);
       if(cmd.includes('new round')) return newRound();
-      if(cmd.startsWith('bet')) return placeBet(amt?parseInt(amt[1]):0);
+      if(cmd.startsWith('bet')||cmd.startsWith('bit ')||cmd.startsWith('but ')||cmd.startsWith('that ')&&amt) return placeBet(amt?parseInt(amt[1]):0);
       if(cmd.includes('deal')) return deal();
       if(cmd.includes('hit')) return hit();
       if(cmd.includes('stand')) return stand();
@@ -138,12 +184,15 @@
       if(cmd.includes('surrender')) return surrender();
       if(cmd.includes('insurance yes')) return insurance(true);
       if(cmd.includes('insurance no')) return insurance(false);
-      speak('Unknown command.');
+      if(cmd.includes('help')) return speak('Say bet and an amount, then deal. Then hit, stand, double, split or surrender. Say bankroll to hear your money, or repeat to hear your cards.');
+      if(cmd.includes('bankroll')||cmd.includes('money')||cmd.includes('balance')) return speak(`Bankroll ${bankroll}.`);
+      if(cmd.includes('repeat')||cmd.includes('cards')||cmd.includes('what do i have')) return roundActive ? speak(`You have ${playerHands[0].cards.map(cardName).join(', ')}, total ${handValue(playerHands[0].cards)}. Dealer shows ${cardName(dealerHand[0])}.`) : speak(NO_HAND);
+      speak(`I heard, ${cmd}. Say help for the commands.`);
     }
 
     function handleTap(){
       if(micButton.classList.contains('start')){ micButton.classList.remove('start'); newRound(); }
-      else { if(micButton.classList.contains('listening')) stopListening(); else startListening(); }
+      else { if(listening) stopListening(); else startListening(); }
     }
     micButton.addEventListener('click',handleTap);
   </script>
